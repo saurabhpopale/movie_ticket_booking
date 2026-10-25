@@ -259,8 +259,9 @@ movies_ticket_booking/
    - `MONGODB_URI`: `mongodb+srv://<user>:<password>@cluster0.mongodb.net/ticket_booking`
    - `JWT_SECRET`: `your_random_jwt_secret_key`
    - `ADMIN_SECRET_KEY`: `admin123`
-   - `SMTP_USER`: `your_email@gmail.com`
-   - `SMTP_PASS`: `your_gmail_app_password`
+   - `RESEND_API_KEY`: `re_your_resend_api_key` *(Recommended for Render: Render Free Tier blocks SMTP ports 465 & 587. Resend works over HTTPS port 443 with 3,000 free emails/month at [resend.com](https://resend.com))*
+   - `SMTP_USER`: `your_email@gmail.com` *(Optional / fallback)*
+   - `SMTP_PASS`: `your_gmail_app_password` *(Optional / fallback)*
    - `RAZORPAY_KEY_ID`: `your_razorpay_key_id`
    - `RAZORPAY_KEY_SECRET`: `your_razorpay_secret`
 

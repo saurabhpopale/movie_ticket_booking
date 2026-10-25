@@ -96,7 +96,9 @@ router.post('/register-initiate', async (req: Request, res: Response): Promise<v
 
     res.status(200).json({
       success: true,
-      message: `Verification code sent to ${normalizedEmail}`,
+      message: emailResult.deliveredViaEmail
+        ? `Verification code sent to ${normalizedEmail}`
+        : (emailResult.message || `Verification code sent to ${normalizedEmail}`),
       email: normalizedEmail,
       role: isExplicitAdmin ? 'admin' : 'user',
       devOtp: emailResult.devOtp,
@@ -247,7 +249,9 @@ router.post('/login-initiate', async (req: Request, res: Response): Promise<void
 
     res.status(200).json({
       success: true,
-      message: `Security OTP sent to ${normalizedEmail}`,
+      message: emailResult.deliveredViaEmail
+        ? `Security OTP sent to ${normalizedEmail}`
+        : (emailResult.message || `Security OTP sent to ${normalizedEmail}`),
       email: normalizedEmail,
       role: user.role,
       devOtp: emailResult.devOtp,
@@ -361,7 +365,9 @@ router.post('/resend-otp', async (req: Request, res: Response): Promise<void> =>
 
     res.status(200).json({
       success: true,
-      message: `A fresh OTP has been sent to ${normalizedEmail}`,
+      message: emailResult.deliveredViaEmail
+        ? `A fresh OTP has been sent to ${normalizedEmail}`
+        : (emailResult.message || `A fresh OTP has been sent to ${normalizedEmail}`),
       devOtp: emailResult.devOtp,
     });
   } catch (error: any) {
@@ -418,7 +424,9 @@ router.post('/forgot-password-initiate', async (req: Request, res: Response): Pr
 
     res.status(200).json({
       success: true,
-      message: `Password reset OTP has been sent to ${normalizedEmail}`,
+      message: emailResult.deliveredViaEmail
+        ? `Password reset OTP has been sent to ${normalizedEmail}`
+        : (emailResult.message || `Password reset OTP has been sent to ${normalizedEmail}`),
       email: normalizedEmail,
       devOtp: emailResult.devOtp,
     });
