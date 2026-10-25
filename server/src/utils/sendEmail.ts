@@ -14,7 +14,7 @@ export const sendOtpEmail = async ({
   email,
   otp,
   type,
-}: SendOtpOptions): Promise<{ success: boolean; devOtp?: string; messageId?: string }> => {
+}: SendOtpOptions): Promise<{ success: boolean; devOtp?: string; messageId?: string; error?: string }> => {
   const isSignup = type === 'signup';
   const isForgot = type === 'forgot_password';
   const subject = isSignup
@@ -67,13 +67,14 @@ export const sendOtpEmail = async ({
   const rawHost = process.env.SMTP_HOST;
   const rawUser = process.env.SMTP_USER;
   const rawPass = process.env.SMTP_PASS;
-  const port = Number(process.env.SMTP_PORT) || 587;
+  const port = Number(process.env.SMTP_PORT) || 465;
 
-  const host = rawHost ? rawHost.replace(/^["']|["']$/g, '').trim() : undefined;
+  const host = rawHost ? rawHost.replace(/^["']|["']$/g, '').trim() : 'smtp.gmail.com';
   const user = rawUser ? rawUser.replace(/^["']|["']$/g, '').trim() : undefined;
-  const pass = rawPass ? rawPass.replace(/^["']|["']$/g, '').trim() : undefined;
+  // Clean password: strip quotes and any whitespace (Google App passwords are displayed as "xxxx xxxx xxxx xxxx")
+  const pass = rawPass ? rawPass.replace(/["']/g, '').replace(/\s+/g, '') : undefined;
 
-  // Print OTP in server terminal
+  // Print OTP in server terminal for debugging/monitoring
   console.log('\n======================================================');
   console.log(`📩 OTP Dispatch [${type.toUpperCase()}] for: ${email}`);
   console.log(`🔑 Verification Code: >>> ${otp} <<<`);
@@ -82,19 +83,24 @@ export const sendOtpEmail = async ({
   if (user && pass) {
     try {
       const isGmail = host === 'smtp.gmail.com' || user.includes('@gmail.com');
-      const transporter = isGmail
-        ? nodemailer.createTransport({
-            service: 'gmail',
-            auth: { user, pass },
-          })
-        : nodemailer.createTransport({
-            host: host || 'localhost',
-            port,
-            secure: port === 465,
-            auth: { user, pass },
-          });
+      const secure = isGmail ? (port !== 587) : (port === 465);
 
-      const senderEmail = process.env.EMAIL_FROM?.replace(/^["']|["']$/g, '').trim() || `"CinePass Security" <${user}>`;
+      const transporter = nodemailer.createTransport({
+        host: isGmail ? 'smtp.gmail.com' : host,
+        port: isGmail ? (port === 587 ? 587 : 465) : port,
+        secure,
+        auth: { user, pass },
+        tls: {
+          rejectUnauthorized: false,
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+      });
+
+      const senderEmail =
+        process.env.EMAIL_FROM?.replace(/^["']|["']$/g, '').trim() ||
+        `"CinePass" <${user}>`;
 
       const info = await transporter.sendMail({
         from: senderEmail,
@@ -105,13 +111,23 @@ export const sendOtpEmail = async ({
 
       console.log(`✅ Real email successfully delivered to ${email}. MessageId: ${info.messageId}`);
       return { success: true, messageId: info.messageId };
-    } catch (err) {
-      console.error('⚠️ Failed to send real email via SMTP, fallback to console OTP:', err);
-      return { success: true, devOtp: otp };
+    } catch (err: any) {
+      console.error('❌ Failed to send real email via SMTP:', err.message || err);
+      return {
+        success: false,
+        error: `Failed to deliver email to ${email}. Error: ${err.message || 'SMTP delivery failed'}`,
+      };
     }
   }
 
-  // If no SMTP configured, return devOtp as fallback
-  console.log('ℹ️ No SMTP credentials configured. Returning devOtp.');
-  return { success: true, devOtp: otp };
+  // If no SMTP configured
+  console.warn('⚠️ No SMTP_USER or SMTP_PASS configured in environment variables!');
+  
+  // Only allow devOtp if explicitly in local development AND NOT in production
+  const isDev = process.env.NODE_ENV !== 'production';
+  return {
+    success: isDev,
+    error: 'SMTP credentials (SMTP_USER, SMTP_PASS) are not configured in your deployment environment variables.',
+    devOtp: isDev ? otp : undefined,
+  };
 };

@@ -87,12 +87,19 @@ router.post('/register-initiate', async (req: Request, res: Response): Promise<v
       type: 'signup',
     });
 
+    if (!emailResult.success) {
+      res.status(500).json({
+        message: emailResult.error || `Failed to send verification email to ${normalizedEmail}.`,
+      });
+      return;
+    }
+
     res.status(200).json({
       success: true,
       message: `Verification code sent to ${normalizedEmail}`,
       email: normalizedEmail,
       role: isExplicitAdmin ? 'admin' : 'user',
-      devOtp: emailResult.devOtp, // Convenient for local testing
+      devOtp: emailResult.devOtp,
     });
   } catch (error: any) {
     console.error('Error in register-initiate:', error);
@@ -231,6 +238,13 @@ router.post('/login-initiate', async (req: Request, res: Response): Promise<void
       type: 'login',
     });
 
+    if (!emailResult.success) {
+      res.status(500).json({
+        message: emailResult.error || `Failed to send security OTP to ${normalizedEmail}.`,
+      });
+      return;
+    }
+
     res.status(200).json({
       success: true,
       message: `Security OTP sent to ${normalizedEmail}`,
@@ -338,6 +352,13 @@ router.post('/resend-otp', async (req: Request, res: Response): Promise<void> =>
       type,
     });
 
+    if (!emailResult.success) {
+      res.status(500).json({
+        message: emailResult.error || `Failed to resend verification code to ${normalizedEmail}.`,
+      });
+      return;
+    }
+
     res.status(200).json({
       success: true,
       message: `A fresh OTP has been sent to ${normalizedEmail}`,
@@ -387,6 +408,13 @@ router.post('/forgot-password-initiate', async (req: Request, res: Response): Pr
       otp,
       type: 'forgot_password',
     });
+
+    if (!emailResult.success) {
+      res.status(500).json({
+        message: emailResult.error || `Failed to send password reset code to ${normalizedEmail}.`,
+      });
+      return;
+    }
 
     res.status(200).json({
       success: true,

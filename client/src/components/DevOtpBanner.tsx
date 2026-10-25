@@ -6,7 +6,8 @@ export const DevOtpBanner: React.FC = () => {
   const { devOtpNotice, setDevOtpNotice } = useAuth();
   const [copied, setCopied] = React.useState(false);
 
-  if (!devOtpNotice) return null;
+  // Never show dev OTP banner in production builds; only in local development
+  if (!import.meta.env.DEV || !devOtpNotice) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(devOtpNotice);
