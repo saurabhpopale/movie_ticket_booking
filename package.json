@@ -1,0 +1,17 @@
+{
+  "name": "movies-ticket-booking-mern",
+  "version": "1.0.0",
+  "description": "MERN Stack Movie Ticket Booking with TypeScript, Tailwind CSS, Email OTP Auth, and Admin/User portals",
+  "scripts": {
+    "start": "node server/dist/index.js",
+    "dev": "concurrently -n \"SERVER,CLIENT\" -c \"cyan,magenta\" \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "build": "npm run build --prefix server && npm run build --prefix client",
+    "build:server": "npm run build --prefix server",
+    "build:client": "npm run build --prefix client",
+    "seed": "npm run seed --prefix server",
+    "postinstall": "npm install --prefix server && npm install --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

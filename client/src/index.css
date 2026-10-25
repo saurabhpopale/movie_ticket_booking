@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-[#f8f9fd] text-slate-900 antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+/* Print Stylesheet */
+@media print {
+  /* Hide page chrome, navigation, footers, interactive action buttons */
+  nav,
+  footer,
+  .no-print,
+  button {
+    display: none !important;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Single ticket print fallback */
+  body.print-single-ticket * {
+    visibility: hidden;
+  }
+
+  body.print-single-ticket #active-print-ticket,
+  body.print-single-ticket #active-print-ticket * {
+    visibility: visible;
+  }
+
+  body.print-single-ticket #active-print-ticket {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Prevent tickets from breaking across multiple pages */
+  .ticket-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
+
