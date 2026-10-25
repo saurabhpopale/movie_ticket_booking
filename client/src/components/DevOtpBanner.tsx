@@ -1,15 +1,13 @@
 import React from 'react';
 import { useAuth } from '../context/AuthContext.js';
-import { KeyRound, X, Copy, Check, AlertTriangle } from 'lucide-react';
+import { KeyRound, X, Copy, Check } from 'lucide-react';
 
 export const DevOtpBanner: React.FC = () => {
   const { devOtpNotice, setDevOtpNotice } = useAuth();
   const [copied, setCopied] = React.useState(false);
 
-  // If no devOtp was returned by the server (i.e. real email delivered or no active OTP), don't render anything
-  if (!devOtpNotice) return null;
-
-  const isDev = import.meta.env.DEV;
+  // Strictly NEVER show OTP helper banner in production builds; ONLY in local development
+  if (!import.meta.env.DEV || !devOtpNotice) return null;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(devOtpNotice);
@@ -21,12 +19,8 @@ export const DevOtpBanner: React.FC = () => {
     <div className="fixed bottom-5 right-5 z-50 max-w-sm bg-white/95 backdrop-blur-md border border-violet-200 p-4 rounded-2xl shadow-2xl shadow-violet-500/15 animate-bounce-once">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-violet-700 font-bold text-sm">
-          {isDev ? (
-            <KeyRound className="w-4 h-4 text-violet-600 animate-pulse" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 text-amber-500 animate-pulse" />
-          )}
-          <span>{isDev ? 'Dev Mode OTP Helper' : 'Cloud Fallback OTP Helper'}</span>
+          <KeyRound className="w-4 h-4 text-violet-600 animate-pulse" />
+          <span>Dev Mode OTP Helper</span>
         </div>
         <button
           onClick={() => setDevOtpNotice(null)}
@@ -37,9 +31,7 @@ export const DevOtpBanner: React.FC = () => {
         </button>
       </div>
       <p className="text-xs text-slate-500 mt-1">
-        {isDev
-          ? 'Your verification code (also logged in server terminal):'
-          : 'Render blocked SMTP ports. Your verification code (also in Render logs):'}
+        Your verification code (also logged in server terminal):
       </p>
       <div className="mt-2.5 flex items-center justify-between bg-violet-50/70 px-3 py-2 rounded-xl border border-violet-100">
         <span className="font-mono text-xl font-bold tracking-widest text-violet-700">
@@ -53,11 +45,6 @@ export const DevOtpBanner: React.FC = () => {
           <span>{copied ? 'Copied' : 'Copy'}</span>
         </button>
       </div>
-      {!isDev && (
-        <p className="text-[10px] text-amber-600 mt-2 bg-amber-50 p-1.5 rounded border border-amber-200">
-          💡 Add <code className="font-mono font-bold">RESEND_API_KEY</code> to Render Environment Variables to enable direct inbox delivery over HTTPS.
-        </p>
-      )}
     </div>
   );
 };

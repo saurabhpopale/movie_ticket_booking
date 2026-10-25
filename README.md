@@ -259,11 +259,40 @@ movies_ticket_booking/
    - `MONGODB_URI`: `mongodb+srv://<user>:<password>@cluster0.mongodb.net/ticket_booking`
    - `JWT_SECRET`: `your_random_jwt_secret_key`
    - `ADMIN_SECRET_KEY`: `admin123`
-   - `RESEND_API_KEY`: `re_your_resend_api_key` *(Recommended for Render: Render Free Tier blocks SMTP ports 465 & 587. Resend works over HTTPS port 443 with 3,000 free emails/month at [resend.com](https://resend.com))*
-   - `SMTP_USER`: `your_email@gmail.com` *(Optional / fallback)*
-   - `SMTP_PASS`: `your_gmail_app_password` *(Optional / fallback)*
    - `RAZORPAY_KEY_ID`: `your_razorpay_key_id`
    - `RAZORPAY_KEY_SECRET`: `your_razorpay_secret`
+
+---
+
+### Step 2.1: Production Email Provider Setup (Crucial for OTP Delivery to All Users)
+
+> ⚠️ **Important: Understanding Provider Sandbox Restrictions**
+> By default, Resend assigns a testing domain (`onboarding@resend.dev`). Because of anti-abuse policies, Resend strictly allows sending emails **only to the registered email address of your Resend account**. A code change alone cannot lift this sandbox restriction.
+>
+> To deliver OTP verification codes to **any arbitrary user/recipient**, you must configure one of the two options below:
+
+#### Method 1: Resend with a Verified Custom Domain (Recommended if you own a domain)
+1. **External Account Setup**:
+   - Log in to your [Resend Dashboard](https://resend.com/domains) and click **Add Domain** (e.g. `yourdomain.com` or `mail.yourdomain.com`).
+   - Resend will generate 3 DNS records: **DKIM**, **SPF**, and **MX/TXT**.
+   - Add these records to your domain provider (GoDaddy, Namecheap, Cloudflare, etc.).
+   - Wait until Resend status changes to **Verified**.
+2. **Render Environment Variables**:
+   - `RESEND_API_KEY`: `re_your_api_key_here`
+   - `EMAIL_FROM`: `"CinePass" <noreply@yourdomain.com>` *(must match your verified domain)*
+
+#### Method 2: Brevo (Sendinblue) Transactional API (No Custom Domain Required!)
+If you do not own a custom domain, Brevo lets you send **300 free transactional emails/day to ANY recipient worldwide**:
+1. **External Account Setup**:
+   - Create a free account at [brevo.com](https://brevo.com).
+   - In your Brevo dashboard, go to **Senders, Domains & Dedicated IPs** → **Senders**.
+   - Click **Add Sender**, enter your name and email (e.g. `your_email@gmail.com`).
+   - Click the confirmation link sent to your Gmail inbox.
+   - Go to **SMTP & API** → **API Keys** and generate a new API key.
+2. **Render Environment Variables**:
+   - `BREVO_API_KEY`: `xkeysib-your_brevo_api_key_here`
+   - `BREVO_SENDER_EMAIL`: `your_verified_sender@gmail.com`
+   - `BREVO_SENDER_NAME`: `CinePass`
 
 ---
 

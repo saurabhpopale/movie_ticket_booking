@@ -4,7 +4,7 @@ export const generateOtp = (): string => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-interface SendOtpOptions {
+export interface SendOtpOptions {
   email: string;
   otp: string;
   type: 'signup' | 'login' | 'forgot_password';
@@ -13,12 +13,33 @@ interface SendOtpOptions {
 export interface SendEmailResult {
   success: boolean;
   deliveredViaEmail: boolean;
-  provider?: 'resend' | 'brevo' | 'smtp' | 'console_fallback';
+  provider?: 'resend' | 'brevo' | 'smtp' | 'dev_fallback';
   devOtp?: string;
   messageId?: string;
   error?: string;
   message?: string;
 }
+
+/**
+ * Parses sender strings like 'CinePass <noreply@example.com>' or 'noreply@example.com'
+ */
+export const parseSender = (
+  raw?: string,
+  defaultEmail = 'onboarding@resend.dev',
+  defaultName = 'CinePass'
+): { name: string; email: string; formatted: string } => {
+  if (!raw || !raw.trim()) {
+    return { name: defaultName, email: defaultEmail, formatted: `"${defaultName}" <${defaultEmail}>` };
+  }
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(?:"?([^"]*)"?\s)?<?([^>]+)>?$/);
+  if (match && match[2]) {
+    const name = (match[1] || defaultName).trim();
+    const email = match[2].trim();
+    return { name, email, formatted: `"${name}" <${email}>` };
+  }
+  return { name: defaultName, email: trimmed, formatted: `"${defaultName}" <${trimmed}>` };
+};
 
 export const sendOtpEmail = async ({
   email,
@@ -28,10 +49,10 @@ export const sendOtpEmail = async ({
   const isSignup = type === 'signup';
   const isForgot = type === 'forgot_password';
   const subject = isSignup
-    ? `🎬 Welcome to CinePass - Your Verification Code is ${otp}`
+    ? `🎬 Welcome to CinePass - Your Verification Code`
     : isForgot
-    ? `🎬 CinePass Password Reset Code: ${otp}`
-    : `🎬 CinePass Login Verification Code: ${otp}`;
+    ? `🎬 CinePass Password Reset Code`
+    : `🎬 CinePass Login Verification Code`;
 
   const html = `
     <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #0f172a; color: #f8fafc; padding: 32px; border-radius: 12px; border: 1px solid #334155;">
@@ -74,28 +95,29 @@ export const sendOtpEmail = async ({
     </div>
   `;
 
-  // Always log OTP in server terminal for administrative / debugging access
-  console.log('\n======================================================');
-  console.log(`📩 OTP Dispatch [${type.toUpperCase()}] for: ${email}`);
-  console.log(`🔑 Verification Code: >>> ${otp} <<<`);
-  console.log('======================================================\n');
+  const isProd = process.env.NODE_ENV === 'production';
+  const isDev = !isProd;
+
+  // Log dispatch event without exposing the sensitive OTP
+  console.log(`[Email Service] Initiating OTP dispatch [${type.toUpperCase()}] for recipient: ${email}`);
+
+  let lastProviderError = '';
 
   // --------------------------------------------------------------------------
-  // PROVIDER 1: RESEND HTTP REST API (Recommended for Cloud Hosts like Render)
-  // Communicates over HTTPS (port 443). Render never blocks port 443!
-  // Free tier: 3,000 emails/month at https://resend.com
+  // PROVIDER 1: RESEND HTTP REST API (HTTPS Port 443)
+  // Communicates over port 443 (never blocked by Render).
+  // Note: onboarding@resend.dev is a sandbox domain restricted to the account owner.
+  // Sending to arbitrary external recipients requires a verified custom domain.
   // --------------------------------------------------------------------------
   const resendApiKey = process.env.RESEND_API_KEY?.trim();
   if (resendApiKey) {
     try {
-      let fromAddress = process.env.RESEND_FROM?.trim() || process.env.EMAIL_FROM?.trim();
-      // If no custom domain sender is specified or it is a generic freemail address,
-      // default to Resend's built-in sandbox sender which delivers to account email without domain setup
-      if (!fromAddress || fromAddress.includes('@gmail.com') || fromAddress.includes('@yahoo.com') || fromAddress.includes('@outlook.com')) {
-        fromAddress = 'CinePass <onboarding@resend.dev>';
-      }
+      const parsedSender = parseSender(
+        process.env.RESEND_FROM?.trim() || process.env.EMAIL_FROM?.trim(),
+        'onboarding@resend.dev',
+        'CinePass'
+      );
 
-      console.log(`🚀 Attempting email delivery via Resend HTTP API to ${email}...`);
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -103,7 +125,7 @@ export const sendOtpEmail = async ({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: fromAddress,
+          from: parsedSender.formatted,
           to: [email],
           subject,
           html,
@@ -112,7 +134,7 @@ export const sendOtpEmail = async ({
 
       const resData = (await response.json().catch(() => ({}))) as any;
       if (response.ok && resData?.id) {
-        console.log(`✅ [Resend API] Real email successfully delivered to ${email}. ID: ${resData.id}`);
+        console.log(`[Email Service] Delivered via Resend to ${email} (MessageId: ${resData.id})`);
         return {
           success: true,
           deliveredViaEmail: true,
@@ -120,35 +142,45 @@ export const sendOtpEmail = async ({
           messageId: resData.id,
         };
       } else {
-        console.warn('⚠️ [Resend API] Failed to dispatch via Resend:', resData);
+        const errorDetails = resData?.message || resData?.name || `HTTP ${response.status}`;
+        console.error(`[Email Service Error] Resend dispatch to ${email} failed: ${errorDetails}`);
+        lastProviderError = `Resend: ${errorDetails}`;
       }
-    } catch (resendError: any) {
-      console.warn('⚠️ [Resend API] Network error:', resendError.message || resendError);
+    } catch (err: any) {
+      console.error(`[Email Service Error] Resend network error for ${email}: ${err.message || err}`);
+      lastProviderError = `Resend network error: ${err.message || err}`;
     }
   }
 
   // --------------------------------------------------------------------------
-  // PROVIDER 2: BREVO (SENDINBLUE) HTTP REST API
-  // 300 free emails/day over HTTPS (port 443) to any recipient
+  // PROVIDER 2: BREVO (SENDINBLUE) OFFICIAL TRANSACTIONAL EMAIL API
+  // Communicates over HTTPS Port 443.
+  // Allows sending to any arbitrary recipient once the sender email/domain is verified.
   // --------------------------------------------------------------------------
   const brevoApiKey = (process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY)?.trim();
   if (brevoApiKey) {
     try {
-      const senderEmail =
-        process.env.BREVO_SENDER?.trim() ||
-        process.env.SMTP_USER?.trim() ||
-        'saurabhpopale720@gmail.com';
-      const senderName = process.env.BREVO_SENDER_NAME?.trim() || 'CinePass';
+      const defaultBrevoEmail = process.env.SMTP_USER?.trim() || 'saurabhpopale720@gmail.com';
+      const parsedBrevoSender = parseSender(
+        process.env.BREVO_SENDER_EMAIL?.trim() ||
+          process.env.BREVO_SENDER?.trim() ||
+          process.env.EMAIL_FROM?.trim(),
+        defaultBrevoEmail,
+        process.env.BREVO_SENDER_NAME?.trim() || 'CinePass'
+      );
 
-      console.log(`🚀 Attempting email delivery via Brevo HTTP API to ${email}...`);
       const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
           'api-key': brevoApiKey,
           'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
         body: JSON.stringify({
-          sender: { name: senderName, email: senderEmail },
+          sender: {
+            name: parsedBrevoSender.name,
+            email: parsedBrevoSender.email,
+          },
           to: [{ email }],
           subject,
           htmlContent: html,
@@ -156,25 +188,29 @@ export const sendOtpEmail = async ({
       });
 
       const resData = (await response.json().catch(() => ({}))) as any;
-      if (response.ok && resData?.messageId) {
-        console.log(`✅ [Brevo API] Real email successfully delivered to ${email}. ID: ${resData.messageId}`);
+      if (response.ok && (resData?.messageId || resData?.id)) {
+        const id = resData.messageId || resData.id;
+        console.log(`[Email Service] Delivered via Brevo to ${email} (MessageId: ${id})`);
         return {
           success: true,
           deliveredViaEmail: true,
           provider: 'brevo',
-          messageId: resData.messageId,
+          messageId: id,
         };
       } else {
-        console.warn('⚠️ [Brevo API] Failed to dispatch via Brevo:', resData);
+        const errorDetails = resData?.message || resData?.code || `HTTP ${response.status}`;
+        console.error(`[Email Service Error] Brevo dispatch to ${email} failed: ${errorDetails}`);
+        lastProviderError = `Brevo: ${errorDetails}`;
       }
-    } catch (brevoError: any) {
-      console.warn('⚠️ [Brevo API] Network error:', brevoError.message || brevoError);
+    } catch (err: any) {
+      console.error(`[Email Service Error] Brevo network error for ${email}: ${err.message || err}`);
+      lastProviderError = `Brevo network error: ${err.message || err}`;
     }
   }
 
   // --------------------------------------------------------------------------
   // PROVIDER 3: NODEMAILER SMTP (Direct Connection with Smart Dual-Port Retry)
-  // Works locally, on VPS, or paid cloud instances where SMTP is permitted
+  // Suitable for local development or unblocked hosting environments
   // --------------------------------------------------------------------------
   const rawHost = process.env.SMTP_HOST;
   const rawUser = process.env.SMTP_USER;
@@ -184,8 +220,6 @@ export const sendOtpEmail = async ({
   const host = rawHost ? rawHost.replace(/^["']|["']$/g, '').trim() : 'smtp.gmail.com';
   const user = rawUser ? rawUser.replace(/^["']|["']$/g, '').trim() : undefined;
   const pass = rawPass ? rawPass.replace(/["']/g, '').replace(/\s+/g, '') : undefined;
-
-  let lastSmtpError = '';
 
   if (user && pass) {
     const isGmail = host === 'smtp.gmail.com' || user.includes('@gmail.com');
@@ -215,78 +249,65 @@ export const sendOtpEmail = async ({
       });
     };
 
-    // Primary SMTP attempt
     const primaryPort = port === 587 ? 587 : 465;
     const primarySecure = primaryPort === 465;
 
     try {
-      console.log(`🔌 Attempting SMTP delivery to ${email} via ${host}:${primaryPort}...`);
       const info = await trySendSmtp(primaryPort, primarySecure);
-      console.log(`✅ [SMTP] Real email successfully delivered to ${email}. MessageId: ${info.messageId}`);
+      console.log(`[Email Service] Delivered via SMTP to ${email} (MessageId: ${info.messageId})`);
       return {
         success: true,
         deliveredViaEmail: true,
         provider: 'smtp',
         messageId: info.messageId,
       };
-    } catch (err1: any) {
-      lastSmtpError = err1.message || String(err1);
-      console.warn(`⚠️ [SMTP] Connection to port ${primaryPort} failed: ${lastSmtpError}`);
-
-      // Try alternate port (e.g., 587 if 465 failed, or 465 if 587 failed)
+    } catch (smtpErr1: any) {
+      console.warn(`[Email Service Warning] SMTP connection on port ${primaryPort} failed: ${smtpErr1.message || smtpErr1}`);
       const altPort = primaryPort === 465 ? 587 : 465;
       const altSecure = altPort === 465;
       try {
-        console.log(`🔄 Retrying SMTP delivery on alternate port ${altPort}...`);
         const info = await trySendSmtp(altPort, altSecure);
-        console.log(`✅ [SMTP] Real email delivered to ${email} via port ${altPort}. MessageId: ${info.messageId}`);
+        console.log(`[Email Service] Delivered via SMTP alternate port ${altPort} to ${email}`);
         return {
           success: true,
           deliveredViaEmail: true,
           provider: 'smtp',
           messageId: info.messageId,
         };
-      } catch (err2: any) {
-        lastSmtpError = err2.message || String(err2);
-        console.error(`❌ [SMTP] Both SMTP ports (${primaryPort}, ${altPort}) failed:`, lastSmtpError);
+      } catch (smtpErr2: any) {
+        console.error(`[Email Service Error] SMTP failed on both ports (${primaryPort}, ${altPort}): ${smtpErr2.message || smtpErr2}`);
+        lastProviderError = `SMTP: ${smtpErr2.message || smtpErr2}`;
       }
     }
   }
 
   // --------------------------------------------------------------------------
-  // PROVIDER 4: SMART PRODUCTION RECOVERY / FALLBACK
-  // Cloud providers like Render Free Tier block outbound SMTP ports 25, 465, & 587.
-  // Instead of throwing a fatal 500 that breaks user registration / login,
-  // we log clear diagnostics in server logs and provide a safe fallback so the
-  // user or developer is never permanently locked out of authentication.
+  // LOCAL DEVELOPMENT ONLY FALLBACK
   // --------------------------------------------------------------------------
-  const isCloudTimeout =
-    lastSmtpError.toLowerCase().includes('timeout') ||
-    lastSmtpError.toLowerCase().includes('etimedout') ||
-    lastSmtpError.toLowerCase().includes('econnrefused');
-
-  console.log('\n======================================================');
-  console.log(`ℹ️ [EMAIL DISPATCH STATUS] Real email could not be dispatched.`);
-  if (isCloudTimeout) {
-    console.log(`⚠️ REASON: Cloud host blocked outbound SMTP (${lastSmtpError}).`);
-    console.log(`💡 RENDER / CLOUD FIX:`);
-    console.log(`   Render Free Tier blocks raw SMTP ports 25, 465, and 587.`);
-    console.log(`   To send 100% real emails without timeout on Render:`);
-    console.log(`   1. Sign up at https://resend.com (free 3,000 emails/month).`);
-    console.log(`   2. In Render Dashboard -> Environment Variables, add:`);
-    console.log(`      RESEND_API_KEY = re_your_api_key_here`);
+  if (isDev) {
+    console.log(`[DEV ONLY] Local development OTP for ${email}: ${otp}`);
+    return {
+      success: true,
+      deliveredViaEmail: false,
+      provider: 'dev_fallback',
+      devOtp: otp,
+      message: 'Verification code generated (local dev mode).',
+    };
   }
-  console.log(`🔑 Verification Code for ${email}: >>> ${otp} <<<`);
-  console.log('======================================================\n');
+
+  // --------------------------------------------------------------------------
+  // PRODUCTION: STRICT FAILURE HANDLING (NO OTP LOGGING OR LEAKS)
+  // --------------------------------------------------------------------------
+  console.error(
+    `[Email Service Failure] Could not deliver OTP email to ${email}. Cause: ${
+      lastProviderError || 'No email provider configured'
+    }`
+  );
 
   return {
-    success: true,
+    success: false,
     deliveredViaEmail: false,
-    provider: 'console_fallback',
-    devOtp: otp,
-    message: isCloudTimeout
-      ? `Verification code generated! (Cloud host blocked SMTP; check your server logs or use the fallback verification code).`
-      : `Verification code generated!`,
-    error: lastSmtpError || 'No email delivery provider available',
+    devOtp: undefined, // Never leak devOtp in production
+    error: 'Unable to deliver verification email. Please check your email address or try again later.',
   };
 };

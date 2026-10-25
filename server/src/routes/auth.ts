@@ -88,7 +88,7 @@ router.post('/register-initiate', async (req: Request, res: Response): Promise<v
     });
 
     if (!emailResult.success) {
-      res.status(500).json({
+      res.status(400).json({
         message: emailResult.error || `Failed to send verification email to ${normalizedEmail}.`,
       });
       return;
@@ -128,6 +128,12 @@ router.post('/register-verify', async (req: Request, res: Response): Promise<voi
 
     if (!otpDoc) {
       res.status(400).json({ message: 'OTP expired or not found. Please request a new one.' });
+      return;
+    }
+
+    if (otpDoc.expiresAt && new Date() > otpDoc.expiresAt) {
+      await Otp.deleteMany({ email: normalizedEmail, type: 'signup' });
+      res.status(400).json({ message: 'Verification code has expired. Please request a new one.' });
       return;
     }
 
@@ -241,7 +247,7 @@ router.post('/login-initiate', async (req: Request, res: Response): Promise<void
     });
 
     if (!emailResult.success) {
-      res.status(500).json({
+      res.status(400).json({
         message: emailResult.error || `Failed to send security OTP to ${normalizedEmail}.`,
       });
       return;
@@ -281,6 +287,12 @@ router.post('/login-verify', async (req: Request, res: Response): Promise<void> 
 
     if (!otpDoc) {
       res.status(400).json({ message: 'OTP expired or not found. Please log in again.' });
+      return;
+    }
+
+    if (otpDoc.expiresAt && new Date() > otpDoc.expiresAt) {
+      await Otp.deleteMany({ email: normalizedEmail, type: 'login' });
+      res.status(400).json({ message: 'Verification code has expired. Please log in again.' });
       return;
     }
 
@@ -345,6 +357,17 @@ router.post('/resend-otp', async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
+    // Rate limiting: enforce 30 seconds cooldown between resend requests
+    if (existingOtp.createdAt) {
+      const secondsSinceLastOtp = (Date.now() - new Date(existingOtp.createdAt).getTime()) / 1000;
+      if (secondsSinceLastOtp < 30) {
+        res.status(429).json({
+          message: `Please wait ${Math.ceil(30 - secondsSinceLastOtp)} seconds before requesting a new code.`,
+        });
+        return;
+      }
+    }
+
     const newOtp = generateOtp();
     existingOtp.otp = newOtp;
     existingOtp.createdAt = new Date();
@@ -357,7 +380,7 @@ router.post('/resend-otp', async (req: Request, res: Response): Promise<void> =>
     });
 
     if (!emailResult.success) {
-      res.status(500).json({
+      res.status(400).json({
         message: emailResult.error || `Failed to resend verification code to ${normalizedEmail}.`,
       });
       return;
@@ -416,7 +439,7 @@ router.post('/forgot-password-initiate', async (req: Request, res: Response): Pr
     });
 
     if (!emailResult.success) {
-      res.status(500).json({
+      res.status(400).json({
         message: emailResult.error || `Failed to send password reset code to ${normalizedEmail}.`,
       });
       return;
@@ -460,6 +483,12 @@ router.post('/reset-password-verify', async (req: Request, res: Response): Promi
 
     if (!otpDoc) {
       res.status(400).json({ message: 'Reset code expired or not found. Please request a new one.' });
+      return;
+    }
+
+    if (otpDoc.expiresAt && new Date() > otpDoc.expiresAt) {
+      await Otp.deleteMany({ email: normalizedEmail, type: 'forgot_password' });
+      res.status(400).json({ message: 'Reset code has expired. Please request a new one.' });
       return;
     }
 
